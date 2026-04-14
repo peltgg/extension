@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Pelt Market",
+  "version": "1.1.0",
+  "description": "Official extension for Pelt (pelt.gg) — automatically send Steam trade offers and verify trades for the Pelt skin marketplace.",
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://steamcommunity.com/*",
+    "https://pelt.gg/*",
+    "https://www.pelt.gg/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://steamcommunity.com/*"],
+      "js": ["session_extractor.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://pelt.gg/*", "https://www.pelt.gg/*"],
+      "js": ["marketplace_bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["marketplace_bridge.js"],
+      "matches": ["https://pelt.gg/*", "https://www.pelt.gg/*"]
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "steam_referer",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pelt@pelt.gg",
+      "strict_min_version": "128.0"
+    }
+  }
+}
