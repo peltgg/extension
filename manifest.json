@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Pelt Market",
+  "version": "1.0.0",
+  "description": "Auto-fill trade offers and verify trades for the Pelt marketplace.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "https://steamcommunity.com/*",
+    "http://localhost/*",
+    "*://localhost/*",
+    "https://pelt.gg/*",
+    "https://*.pelt.gg/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://steamcommunity.com/*"],
+      "js": ["session_extractor.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost:3000/*", "https://pelt.gg/*", "https://*.pelt.gg/*"],
+      "js": ["marketplace_bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["marketplace_bridge.js"],
+      "matches": ["http://localhost:3000/*", "https://pelt.gg/*", "https://*.pelt.gg/*"]
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "steam_referer",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}
