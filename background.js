@@ -8,6 +8,50 @@ const STEAM_API_BASE = "https://api.steampowered.com";
 const POLL_INTERVAL_MIN = 2; // Poll every 2 minutes
 const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_OFFER_MS = 60 * 60 * 1000; // 1 hour — auto-cancel unconfirmed offers
+const REFERER_RULE_ID = 1738196326;
+
+var refererRuleReady = false;
+
+async function configureRefererRule() {
+  if (!api.declarativeNetRequest || !api.runtime?.getURL) return false;
+
+  try {
+    var extensionHost = new URL(api.runtime.getURL("")).hostname;
+    await api.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [REFERER_RULE_ID],
+      addRules: [
+        {
+          id: REFERER_RULE_ID,
+          priority: 2,
+          action: {
+            type: "modifyHeaders",
+            requestHeaders: [
+              {
+                header: "Referer",
+                operation: "set",
+                value: "https://steamcommunity.com/tradeoffer/new",
+              },
+            ],
+          },
+          condition: {
+            urlFilter: "https://steamcommunity.com/tradeoffer/new/send",
+            resourceTypes: ["xmlhttprequest"],
+            initiatorDomains: [extensionHost],
+          },
+        },
+      ],
+    });
+    refererRuleReady = true;
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function ensureRefererRule() {
+  if (refererRuleReady) return true;
+  return configureRefererRule();
+}
 
 // ── Message Handling ────────────────────────────────────────────────────────
 
@@ -46,10 +90,10 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   if (message.type === "PELT_GET_SESSION") {
-    // Website requests current session state
+    // Website requests non-sensitive session state
     getOrRefreshSession()
-      .then((session) => sendResponse(session))
-      .catch(() => sendResponse(null));
+      .then((session) => sendResponse(toPublicSession(session)))
+      .catch(() => sendResponse({ loggedIn: false }));
     return true;
   }
 });
@@ -88,6 +132,7 @@ if (chrome.alarms) {
 
 // Poll on service worker wake-up
 pollPendingTrades().catch(() => {});
+configureRefererRule().catch(() => {});
 
 // ── Session Management ──────────────────────────────────────────────────────
 // Primary: fetch steamcommunity.com from background and parse g_sessionID + g_steamID + access token
@@ -147,6 +192,18 @@ async function getOrRefreshSession() {
   }
 }
 
+function toPublicSession(session) {
+  if (!session || !session.steamID) {
+    return { loggedIn: false };
+  }
+
+  return {
+    loggedIn: true,
+    steamID: session.steamID,
+    fresh: !!session.fresh,
+  };
+}
+
 // ── Trade Verification (Steam Web API primary, HTML scraping fallback) ──────
 
 async function pollPendingTrades() {
@@ -180,7 +237,7 @@ async function pollPendingTrades() {
         // Report to Pelt server
         await reportTradeStatus(trade.transactionId, trade.tradeOfferId, newState);
         trade.lastState = newState;
-        if (["accepted", "declined", "cancelled"].includes(newState)) {
+        if (["accepted", "declined", "cancelled", "escrow"].includes(newState)) {
           trade.done = true;
         }
       }
@@ -230,7 +287,7 @@ async function fetchTradeOffersViaAPI(accessToken) {
       if (state === 3) results[id] = "accepted";
       else if (state === 7) results[id] = "declined";
       else if (state === 5 || state === 6 || state === 4 || state === 8 || state === 10) results[id] = "cancelled";
-      else if (state === 11) results[id] = "accepted"; // InEscrow = items will transfer
+      else if (state === 11) results[id] = "escrow";
       else if (state === 2 || state === 9) results[id] = "active";
     }
 
@@ -263,6 +320,8 @@ async function getTradeStateFromHTML(tradeOfferId) {
 
     if (html.includes("Trade Accepted") || html.includes("Items have been exchanged")) {
       return "accepted";
+    } else if (html.toLowerCase().includes("escrow")) {
+      return "escrow";
     } else if (html.includes("Trade Declined") || html.includes("has been declined")) {
       return "declined";
     } else if (
@@ -282,19 +341,23 @@ async function getTradeStateFromHTML(tradeOfferId) {
  * Report trade status to Pelt server.
  */
 async function reportTradeStatus(transactionId, tradeOfferId, state) {
+  var lastError = null;
   for (var origin of PELT_ORIGINS) {
     try {
-      await fetch(origin + "/api/extension/trade-status", {
+      var resp = await fetch(origin + "/api/extension/trade-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ transactionId: transactionId, tradeOfferId: tradeOfferId, state: state }),
       });
-      break;
-    } catch (_e) {
+      if (resp.ok) return;
+      lastError = new Error("Trade status report failed with HTTP " + resp.status);
+    } catch (e) {
+      lastError = e;
       continue;
     }
   }
+  throw lastError || new Error("Failed to report trade status");
 }
 
 // ── Auto-Cancel Stale Unconfirmed Offers ────────────────────────────────────
@@ -315,7 +378,7 @@ async function cancelStaleOffers() {
     try {
       var formData = new URLSearchParams();
       formData.set("sessionid", sessionID);
-      await fetch(
+      var cancelResp = await fetch(
         "https://steamcommunity.com/tradeoffer/" + trade.tradeOfferId + "/cancel",
         {
           method: "POST",
@@ -324,6 +387,7 @@ async function cancelStaleOffers() {
           body: formData.toString(),
         }
       );
+      if (!cancelResp.ok) continue;
       trade.lastState = "cancelled";
       trade.done = true;
 
@@ -368,6 +432,8 @@ async function handleCreateTradeOffer(params) {
       needsLogin: true,
     };
   }
+
+  await ensureRefererRule();
 
   // Account identity validation: if we know the expected seller SteamID, verify it matches
   if (params.expectedSteamId && session.steamID && session.steamID !== params.expectedSteamId) {

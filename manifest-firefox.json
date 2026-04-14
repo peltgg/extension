@@ -18,7 +18,7 @@
   "host_permissions": [
     "https://steamcommunity.com/*",
     "https://pelt.gg/*",
-    "https://*.pelt.gg/*"
+    "https://www.pelt.gg/*"
   ],
   "content_scripts": [
     {
@@ -27,7 +27,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://pelt.gg/*", "https://*.pelt.gg/*"],
+      "matches": ["https://pelt.gg/*", "https://www.pelt.gg/*"],
       "js": ["marketplace_bridge.js"],
       "run_at": "document_start"
     }
@@ -38,7 +38,7 @@
   "web_accessible_resources": [
     {
       "resources": ["marketplace_bridge.js"],
-      "matches": ["https://pelt.gg/*", "https://*.pelt.gg/*"]
+      "matches": ["https://pelt.gg/*", "https://www.pelt.gg/*"]
     }
   ],
   "declarative_net_request": {
