@@ -15,11 +15,11 @@
     (function() {
       var origin = "https://steamcommunity.com";
       if (typeof g_sessionID !== "undefined" && g_sessionID) {
-        window.postMessage({ type: "SBOXFLOAT_SESSION", sessionID: g_sessionID }, origin);
+        window.postMessage({ type: "PELT_SESSION", sessionID: g_sessionID }, origin);
       }
       var match = document.documentElement.innerHTML.match(/g_sessionID\\s*=\\s*"([0-9a-fA-F]+)"/);
       if (match && match[1]) {
-        window.postMessage({ type: "SBOXFLOAT_SESSION", sessionID: match[1] }, origin);
+        window.postMessage({ type: "PELT_SESSION", sessionID: match[1] }, origin);
       }
     })();
   `;
@@ -30,7 +30,7 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     if (event.origin !== EXPECTED_ORIGIN) return; // Reject cross-origin messages
-    if (event.data?.type === "SBOXFLOAT_SESSION" && event.data.sessionID) {
+    if (event.data?.type === "PELT_SESSION" && event.data.sessionID) {
       // Validate session ID format (hex string, 24 chars typical)
       if (!/^[0-9a-fA-F]{12,32}$/.test(event.data.sessionID)) return;
       api.storage.local.set({

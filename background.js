@@ -4,7 +4,7 @@
 // Also polls for trade status changes and reports them back to pelt.gg.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
-const PELT_ORIGINS = ["https://pelt.gg", "http://localhost:3000"];
+const PELT_ORIGINS = ["https://pelt.gg"];
 
 // ── Listen for messages from the marketplace website ──────────────────────────
 
@@ -25,6 +25,13 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 if (api.runtime.onMessageExternal) {
   api.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+    // Validate origin — only accept messages from trusted Pelt origins
+    const senderOrigin = sender.origin || (sender.url ? new URL(sender.url).origin : null);
+    if (!senderOrigin || !PELT_ORIGINS.includes(senderOrigin)) {
+      sendResponse({ success: false, error: "Untrusted origin" });
+      return true;
+    }
+
     if (message.type === "CREATE_TRADE_OFFER") {
       handleCreateTradeOffer(message)
         .then((result) => sendResponse(result))
