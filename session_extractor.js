@@ -7,36 +7,27 @@
   "use strict";
 
   const api = typeof browser !== "undefined" ? browser : chrome;
-  const EXPECTED_ORIGIN = "https://steamcommunity.com";
 
-  // Inject a tiny page script to read g_sessionID from Steam's JS context
-  const script = document.createElement("script");
-  script.textContent = `
-    (function() {
-      var origin = "https://steamcommunity.com";
-      if (typeof g_sessionID !== "undefined" && g_sessionID) {
-        window.postMessage({ type: "PELT_SESSION", sessionID: g_sessionID }, origin);
+  // Extract g_sessionID directly from the page HTML.
+  // Content scripts have DOM access, so we can regex-match from the source
+  // without injecting an inline script (which Steam's CSP blocks).
+  function extractSessionId() {
+    var html = document.documentElement.innerHTML;
+    var match = html.match(/g_sessionID\s*=\s*"([0-9a-fA-F]+)"/);
+    if (match && match[1]) {
+      var sessionID = match[1];
+      // Validate session ID format (hex string, 12-32 chars typical)
+      if (/^[0-9a-fA-F]{12,32}$/.test(sessionID)) {
+        api.storage.local.set({
+          steamSessionID: sessionID,
+          steamSessionUpdated: Date.now(),
+        });
       }
-      var match = document.documentElement.innerHTML.match(/g_sessionID\\s*=\\s*"([0-9a-fA-F]+)"/);
-      if (match && match[1]) {
-        window.postMessage({ type: "PELT_SESSION", sessionID: match[1] }, origin);
-      }
-    })();
-  `;
-  document.head.appendChild(script);
-  script.remove();
-
-  // Listen for the session ID from the page script
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    if (event.origin !== EXPECTED_ORIGIN) return; // Reject cross-origin messages
-    if (event.data?.type === "PELT_SESSION" && event.data.sessionID) {
-      // Validate session ID format (hex string, 24 chars typical)
-      if (!/^[0-9a-fA-F]{12,32}$/.test(event.data.sessionID)) return;
-      api.storage.local.set({
-        steamSessionID: event.data.sessionID,
-        steamSessionUpdated: Date.now(),
-      });
     }
-  });
+  }
+
+  // Run immediately and again after a short delay (some Steam pages
+  // render g_sessionID after initial DOM load)
+  extractSessionId();
+  setTimeout(extractSessionId, 1500);
 })();
