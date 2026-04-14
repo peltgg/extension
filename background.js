@@ -21,6 +21,25 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
+  if (message.type === "PELT_EXTRACT_SESSION" && sender.tab?.id) {
+    // Use chrome.scripting to execute in the page's MAIN world (bypasses CSP)
+    // This can access page JS globals like g_sessionID directly
+    if (chrome.scripting) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id },
+        world: "MAIN",
+        func: function () {
+          if (typeof g_sessionID !== "undefined" && g_sessionID) {
+            window.postMessage(
+              { type: "__PELT_SESSION_RESULT__", sessionID: g_sessionID },
+              window.location.origin
+            );
+          }
+        },
+      }).catch(function () {});
+    }
+    return false;
+  }
 });
 
 if (api.runtime.onMessageExternal) {
